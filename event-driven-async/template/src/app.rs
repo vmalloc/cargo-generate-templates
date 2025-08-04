@@ -4,11 +4,20 @@ use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
 };
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) enum AppState {
+    #[default]
+    Main,
+    Help,
+}
+
 /// Application.
 #[derive(Debug)]
 pub(crate) struct App {
     /// Is the application running?
     pub(crate) running: bool,
+    /// Current application state
+    pub(crate) state: AppState,
     /// Event handler.
     pub(crate) events: EventHandler,
 }
@@ -17,6 +26,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             running: true,
+            state: AppState::default(),
             events: EventHandler::default(),
         }
     }
@@ -49,12 +59,27 @@ impl App {
 
     /// Handles the key events and updates the state of [`App`].
     pub(crate) fn handle_key_events(&mut self, key_event: KeyEvent) -> anyhow::Result<()> {
-        match key_event.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
-            KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
-                self.events.send(AppEvent::Quit)
-            }
-            _ => {}
+        match self.state {
+            AppState::Main => match key_event.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
+                KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    self.events.send(AppEvent::Quit)
+                }
+                KeyCode::Char('h' | '?') => {
+                    self.state = AppState::Help;
+                }
+                _ => {}
+            },
+            AppState::Help => match key_event.code {
+                KeyCode::Esc => {
+                    self.state = AppState::Main;
+                }
+                KeyCode::Char('q') => self.events.send(AppEvent::Quit),
+                KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    self.events.send(AppEvent::Quit)
+                }
+                _ => {}
+            },
         }
         Ok(())
     }
