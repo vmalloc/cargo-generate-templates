@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -23,10 +21,7 @@ impl Widget for &App {
                 Constraint::Min(0),    // Main area
                 Constraint::Length(1), // Status line
             ])
-            .split(area)
-            .deref()
-            .try_into()
-            .unwrap();
+            .areas(area);
 
         match self.state {
             AppState::Main => {
