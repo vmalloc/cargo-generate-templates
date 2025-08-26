@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::app::{App, AppState};
 
-impl Widget for &App {
+impl Widget for &mut App {
     /// Renders the user interface widgets.
     ///
     // This is where you add new widgets.
@@ -32,6 +32,7 @@ impl Widget for &App {
 
                 let text = "This is a tui template.\n\
                         Press `Esc`, `Ctrl-C` or `q` to stop running.\n\
+                        Press `p` to open the action menu.\n\
                         Press `h` or `?` for help.";
 
                 let paragraph = Paragraph::new(text)
@@ -71,6 +72,10 @@ impl Widget for &App {
                     .on_yellow();
                 status_line.render(status_area, buf);
             }
+        }
+
+        if let Some(popup) = self.popup.as_mut() {
+            popup.draw(area, buf);
         }
     }
 }
