@@ -3,9 +3,6 @@ use ratatui::crossterm::event::Event as CrosstermEvent;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// The frequency at which tick events are emitted.
-const TICK_FPS: f64 = 30.0;
-
 /// Representation of all possible events.
 #[derive(Clone, Debug)]
 pub(crate) enum Event {
@@ -74,40 +71,81 @@ impl EventHandler {
     /// This is useful for sending events to the event handler which will be processed by the next
     /// iteration of the application's event loop.
     pub(crate) fn send(&mut self, app_event: AppEvent) {
-        // Ignore the result as the reciever cannot be dropped while this struct still has a
-        // reference to it
         let _ = self.sender.send(Event::App(app_event));
+    }
+
+    pub(crate) fn redraw(&self) {
+        let _ = self.sender.send(Event::Tick);
+    }
+
+    pub(crate) fn redrawer(&self) -> Redraw {
+        Redraw {
+            sender: self.sender.clone(),
+        }
     }
 }
 
-/// A thread that handles reading crossterm events and emitting tick events on a regular schedule.
+#[derive(Clone)]
+pub(crate) struct Redraw {
+    sender: mpsc::UnboundedSender<Event>,
+}
+
+impl Redraw {
+    pub(crate) fn redraw(&self) {
+        let _ = self.sender.send(Event::Tick);
+    }
+
+    pub(crate) fn fps(&self, rate: f64) -> Fps {
+        let sender = self.sender.clone();
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+        tokio::spawn(async move {
+            let tick_rate = Duration::from_secs_f64(1.0 / rate);
+            let mut interval = tokio::time::interval(tick_rate);
+            loop {
+                tokio::select! {
+                    _ = &mut cancel_rx => {
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        if sender.send(Event::Tick).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        Fps { _cancel: cancel_tx }
+    }
+}
+
+pub(crate) struct Fps {
+    _cancel: tokio::sync::oneshot::Sender<()>,
+}
+
+/// A thread that handles reading crossterm events.
 struct EventTask {
     /// Event sender channel.
     sender: mpsc::UnboundedSender<Event>,
 }
 
 impl EventTask {
-    /// Constructs a new instance of [`EventThread`].
+    /// Constructs a new instance of [`EventTask`].
     fn new(sender: mpsc::UnboundedSender<Event>) -> Self {
         Self { sender }
     }
 
     /// Runs the event thread.
     ///
-    /// This function emits tick events at a fixed rate and polls for crossterm events in between.
+    /// This function polls for crossterm events and forwards them to the event receiver.
     async fn run(self) -> anyhow::Result<()> {
-        let tick_rate = Duration::from_secs_f64(1.0 / TICK_FPS);
         let mut reader = crossterm::event::EventStream::new();
-        let mut tick = tokio::time::interval(tick_rate);
         loop {
-            let tick_delay = tick.tick();
             let crossterm_event = reader.next().fuse();
             tokio::select! {
               _ = self.sender.closed() => {
                 break;
-              }
-              _ = tick_delay => {
-                self.send(Event::Tick);
               }
               Some(Ok(evt)) = crossterm_event => {
                 self.send(Event::Crossterm(evt));
@@ -119,8 +157,6 @@ impl EventTask {
 
     /// Sends an event to the receiver.
     fn send(&self, event: Event) {
-        // Ignores the result because shutting down the app drops the receiver, which causes the send
-        // operation to fail. This is expected behavior and should not panic.
         let _ = self.sender.send(event);
     }
 }
